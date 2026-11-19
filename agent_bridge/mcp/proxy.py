@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any
 
@@ -13,6 +14,10 @@ from agent_bridge.mcp.models import Permission, ToolCallResult, ToolSpec
 from agent_bridge.mcp.transport import McpTransport
 
 logger = structlog.get_logger(__name__)
+
+# 网关模式下 tools/list 只暴露元工具，业务工具通过 call_tool 二次转发。
+# 这类工具的真实权限取决于 arguments.tool_name，而非元工具自身名称。
+GATEWAY_DISPATCH_TOOLS = frozenset({"call_tool"})
 
 
 class CircuitBreaker:
@@ -99,7 +104,7 @@ class McpToolProxy:
                 message=f"{server} 熔断器打开，知识库暂时不可用",
                 latency_ms=int((time.perf_counter() - started) * 1000),
             )
-        spec = self._find_spec(server, tool_name, category)
+        spec = self._resolve_spec(server, tool_name, args, category)
 
         def executor(_spec: ToolSpec, arguments: dict[str, Any]) -> ToolCallResult:
             try:
@@ -115,11 +120,15 @@ class McpToolProxy:
                 )
             breaker.record_success()
             data = self._normalise(raw)
+            upstream_code = data.get("code")
+            failed = bool(data.get("isError", False)) or (
+                isinstance(upstream_code, int) and not isinstance(upstream_code, bool) and upstream_code != 0
+            )
             return ToolCallResult(
-                ok=not bool(data.get("isError", False)),
+                ok=not failed,
                 data=data,
-                error_code="0" if not data.get("isError", False) else "3002",
-                message="ok",
+                error_code="3002" if failed else "0",
+                message=str(data.get("message") or "ok") if failed else "ok",
             )
 
         gateway = PermissionGateway(dry_run=self.settings.dry_run, executor=executor)
@@ -135,6 +144,41 @@ class McpToolProxy:
             code=result.error_code,
         )
         return result
+
+    def _resolve_spec(
+        self, server: str, tool_name: str, args: dict[str, Any], category: str | None
+    ) -> ToolSpec:
+        """Resolve the effective spec, unwrapping gateway ``call_tool`` calls.
+
+        In gateway mode ``call_tool`` is a generic dispatcher: its own name says
+        nothing about side effects. Permission is therefore decided by the
+        inner ``tool_name`` carried in the arguments, which keeps dry_run
+        protection intact for write operations forwarded through the gateway.
+        """
+        if tool_name not in GATEWAY_DISPATCH_TOOLS:
+            return self._find_spec(server, tool_name, category)
+        candidate = args.get("tool_name")
+        inner_name = candidate.strip() if isinstance(candidate, str) else ""
+        if not inner_name:
+            return self._find_spec(server, tool_name, category)
+        known = any(spec.server == server and spec.name == inner_name for spec in self._specs.values())
+        if known:
+            return self._find_spec(server, inner_name, category)
+        # 真实网关工具名（如 entry_create_entry）不在声明式 catalog 中，
+        # 回退到 discovery 使用的同一套名称启发式，未知工具仍保守判 WRITE。
+        namespace = server
+        for spec in self._specs.values():
+            if spec.server == server:
+                namespace = spec.qualified_name.split("__")[0]
+                break
+        return ToolSpec(
+            name=inner_name,
+            qualified_name=f"{namespace}__{inner_name}",
+            server=server,
+            permission=PermissionGateway.classify_name(inner_name),
+            permission_explicit=True,
+            category=category,
+        )
 
     def _find_spec(self, server: str, tool_name: str, category: str | None) -> ToolSpec:
         """Find a spec by qualified name, raw name, or synthesise a fallback."""
@@ -166,7 +210,19 @@ class McpToolProxy:
 
     @staticmethod
     def _normalise(raw: dict[str, Any]) -> dict[str, Any]:
-        """Flatten MCP content blocks into a JSON-friendly mapping."""
+        """Flatten an MCP result and promote business fields to the top level.
+
+        Two input shapes are supported:
+
+        * Mock/already-unwrapped: ``content[0].text`` is a JSON object whose
+          keys are the business payload itself.
+        * Real lexiang gateway: ``content[0].text`` carries an envelope
+          ``{"code": 0, "message": "success", "data": {...}, "request_id": ...}``
+          and ``structuredContent`` carries the same business mapping.
+
+        ``structuredContent`` wins on duplicate keys; the original text is
+        still available under ``data["content"]`` for backwards compatibility.
+        """
         content = raw.get("content", [])
         texts: list[str] = []
         for item in content if isinstance(content, list) else []:
@@ -175,16 +231,27 @@ class McpToolProxy:
             elif isinstance(item, str):
                 texts.append(item)
         joined = "\n".join(texts)
-        data: dict[str, Any] = {"content": joined, "isError": bool(raw.get("isError", False))}
+        parsed: dict[str, Any] = {}
         if joined:
             try:
-                import json
-
-                parsed = json.loads(joined)
-                if isinstance(parsed, dict):
-                    data.update(parsed)
+                candidate = json.loads(joined)
+                if isinstance(candidate, dict):
+                    parsed = candidate
             except (ValueError, TypeError):
-                pass
-        if raw.get("structuredContent") is not None:
-            data["structuredContent"] = raw["structuredContent"]
+                parsed = {}
+        data: dict[str, Any] = {"content": joined, "isError": bool(raw.get("isError", False))}
+        is_envelope = "code" in parsed and "request_id" in parsed
+        if parsed and not is_envelope:
+            # Mock path: the text JSON already *is* the business payload.
+            data.update(parsed)
+        elif is_envelope:
+            inner = parsed.get("data")
+            if isinstance(inner, dict):
+                data.update(inner)
+            for key in ("code", "message", "request_id"):
+                if key in parsed:
+                    data[key] = parsed[key]
+        structured = raw.get("structuredContent")
+        if isinstance(structured, dict):
+            data.update(structured)
         return data

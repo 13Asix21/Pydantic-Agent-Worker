@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+# 主理人临时生成的真实凭证导出脚本，绝不提交
+.env.live_exports
 *.key
 *.pem
 *.p12

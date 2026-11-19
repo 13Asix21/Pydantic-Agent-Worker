@@ -300,76 +300,110 @@ def live_proxies():
     transport.close()
 
 
+def _live_call(
+    proxy: McpToolProxy,
+    tool_name: str,
+    args: dict[str, Any],
+    *,
+    confirm: bool = False,
+):
+    """Forward a business tool call through the gateway's ``call_tool`` meta-tool."""
+    return proxy.call(
+        "lexiang",
+        "call_tool",
+        {"tool_name": tool_name, "arguments": args},
+        confirm=confirm,
+    )
+
+
+@pytest.mark.live
 @live
 def test_tc_lx_01_search(live_proxies: tuple[McpToolProxy, McpToolProxy]) -> None:
     """TC-LX-01：关键词检索命中个人 KB。"""
-    result = live_proxies[0].call("lexiang", "search_kb_search", {"query": "Agent Bridge", "space_id": SPACE_ID})
+    result = _live_call(live_proxies[0], "search_kb_search", {"keyword": "Agent Bridge", "space_id": SPACE_ID})
     assert result.ok is True, result.message
+    assert "docs" in result.data
     assert SPACE_ID in json.dumps(result.data, ensure_ascii=False)
 
 
+@pytest.mark.live
 @live
 def test_tc_lx_02_embedding_search(live_proxies: tuple[McpToolProxy, McpToolProxy]) -> None:
     """TC-LX-02：向量检索返回带 score 的结果。"""
-    result = live_proxies[0].call(
-        "lexiang", "search_kb_embedding_search", {"query": "知识库设计", "top_k": 5, "space_id": SPACE_ID}
+    result = _live_call(
+        live_proxies[0],
+        "search_kb_embedding_search",
+        {"filters": {"keyword": "知识库设计"}, "limit": 5, "space_id": SPACE_ID},
     )
     assert result.ok is True, result.message
+    assert "chunks" in result.data
     assert "score" in json.dumps(result.data, ensure_ascii=False)
 
 
+@pytest.mark.live
 @live
 def test_tc_lx_03_space_list(live_proxies: tuple[McpToolProxy, McpToolProxy]) -> None:
-    """TC-LX-03：个人 KB 在空间列表中。"""
-    result = live_proxies[0].call("lexiang", "space_list", {})
+    """TC-LX-03：个人 KB 在最近访问的空间列表中。"""
+    result = _live_call(live_proxies[0], "space_list_recently_spaces", {})
     assert result.ok is True, result.message
+    assert "spaces" in result.data
     assert SPACE_ID in json.dumps(result.data, ensure_ascii=False)
 
 
+@pytest.mark.live
 @live
 def test_tc_lx_04_entry_list_children(live_proxies: tuple[McpToolProxy, McpToolProxy]) -> None:
     """TC-LX-04：根条目子列表返回。"""
-    result = live_proxies[0].call("lexiang", "entry_list_children", {"parent_id": ROOT_ENTRY_ID, "space_id": SPACE_ID})
+    result = _live_call(
+        live_proxies[0], "entry_list_children", {"parent_id": ROOT_ENTRY_ID, "space_id": SPACE_ID}
+    )
     assert result.ok is True, result.message
-    assert "entries" in json.dumps(result.data, ensure_ascii=False)
+    assert "entries" in result.data
 
 
+@pytest.mark.live
 @live
 def test_tc_lx_05_to_07_entry_write_and_cleanup(live_proxies: tuple[McpToolProxy, McpToolProxy]) -> None:
     """TC-LX-05~07：dry_run 不写入 -> confirm 写入 -> 读回 -> teardown 删除。"""
     dry_proxy, write_proxy = live_proxies
     title = f"[POC-TEST]-{uuid.uuid4().hex}"
-    args = {"title": title, "parent_id": ROOT_ENTRY_ID, "space_id": SPACE_ID}
-    dry = dry_proxy.call("lexiang", "entry_create", args)
+    create_args = {"entry_type": "page", "parent_entry_id": ROOT_ENTRY_ID, "name": title}
+    dry = _live_call(dry_proxy, "entry_create_entry", create_args)
     assert dry.dry_run is True and dry.error_code == "3003"
-    assert title not in json.dumps(dry.data, ensure_ascii=False)
-    before = dry_proxy.call("lexiang", "entry_list_children", {"parent_id": ROOT_ENTRY_ID, "space_id": SPACE_ID})
-    assert title not in json.dumps(before.data, ensure_ascii=False)
-    created = write_proxy.call("lexiang", "entry_create", args, confirm=True)
-    assert created.ok is True, created.message
-    entry_id = str(
-        created.data.get("entry_id")
-        or created.data.get("id")
-        or json.loads(created.data.get("content", "{}")).get("entry_id", "")
+    # dry_run 信封会回显 args 供审计；是否真正写入以下方 KB 列表为准。
+    assert dry.data.get("would_call", "").endswith("entry_create_entry")
+    before = _live_call(
+        dry_proxy, "entry_list_children", {"parent_id": ROOT_ENTRY_ID, "space_id": SPACE_ID}
     )
+    assert title not in json.dumps(before.data, ensure_ascii=False)
+    created = _live_call(write_proxy, "entry_create_entry", create_args, confirm=True)
+    assert created.ok is True, created.message
+    entry_payload = created.data.get("entry") or created.data
+    entry_id = str(entry_payload.get("id") or entry_payload.get("entry_id") or "")
     assert entry_id, created.data
     try:
-        described = dry_proxy.call("lexiang", "entry_describe", {"entry_id": entry_id})
-        assert described.ok is True and title in json.dumps(described.data, ensure_ascii=False)
-        block = dry_proxy.call("lexiang", "block_fetch", {"entry_id": entry_id})
-        assert block.ok is True
+        described = _live_call(dry_proxy, "entry_describe_entry", {"entry_id": entry_id})
+        assert described.ok is True, described.message
+        assert (described.data.get("entry") or {}).get("name") == title
+        block = _live_call(dry_proxy, "block_fetch_page", {"entry_id": entry_id})
+        assert block.ok is True, block.message
     finally:
-        deleted = write_proxy.call("lexiang", "entry_delete", {"entry_id": entry_id}, confirm=True)
+        deleted = _live_call(write_proxy, "entry_delete_entry", {"entry_id": entry_id}, confirm=True)
         assert deleted.ok is True, f"teardown 失败，请手工清理 {entry_id}: {deleted.message}"
+    after = _live_call(dry_proxy, "entry_list_children", {"parent_id": ROOT_ENTRY_ID, "space_id": SPACE_ID})
+    assert title not in json.dumps(after.data, ensure_ascii=False)
 
 
+@pytest.mark.live
 @live
 def test_tc_lx_08_default_dry_run_no_change(live_proxies: tuple[McpToolProxy, McpToolProxy]) -> None:
     """TC-LX-08：默认 dry_run 调用 WRITE 工具不产生实际变更。"""
     dry_proxy = live_proxies[0]
-    result = dry_proxy.call(
-        "lexiang", "entry_update", {"entry_id": ROOT_ENTRY_ID, "title": "[POC-TEST]-should-not-exist"}
+    result = _live_call(
+        dry_proxy,
+        "entry_rename_entry",
+        {"entry_id": ROOT_ENTRY_ID, "name": "[POC-TEST]-should-not-exist"},
     )
     assert result.dry_run is True and result.error_code == "3003"
-    after = dry_proxy.call("lexiang", "entry_list_children", {"parent_id": ROOT_ENTRY_ID, "space_id": SPACE_ID})
+    after = _live_call(dry_proxy, "entry_list_children", {"parent_id": ROOT_ENTRY_ID, "space_id": SPACE_ID})
     assert "[POC-TEST]-should-not-exist" not in json.dumps(after.data, ensure_ascii=False)

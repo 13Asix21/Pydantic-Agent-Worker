@@ -23,6 +23,9 @@ class PermissionGateway:
     # 真实乐享工具名多为 "<对象>_<动词>"（entry_describe / block_fetch /
     # entry_list_children），因此同样识别动词出现在名称后半段的情况。
     READ_INFIXES = ("_search", "_list", "_describe", "_fetch", "_get", "_download")
+    # 网关元工具 whoami 只读（返回身份与 personal_space），但名字不含任何 READ 前缀，
+    # 必须显式纳入 READ，否则默认 WRITE 会被 dry_run 拦截。
+    READ_EXACT = frozenset({"whoami", "who_am_i"})
     WRITE_PREFIXES = (
         "create_",
         "update_",
@@ -68,6 +71,8 @@ class PermissionGateway:
         if write_tools and name in write_tools:
             return Permission.WRITE
         lowered = name.lower()
+        if lowered in cls.READ_EXACT:
+            return Permission.READ
         tokens = set(re.split(r"[^a-z0-9]+", lowered))
         if tokens & cls.WRITE_TOKENS:
             return Permission.WRITE
