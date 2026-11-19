@@ -1,0 +1,31 @@
+# MCP server 定义。PoC 阶段两个 server 都使用 mock transport（机制验证）；
+# 拿到真实 endpoint/token 后把 transport 改为 streamable_http / sse / stdio 并通过 ENV 注入凭证。
+version: 1
+
+servers:
+  - name: lexiang
+    namespace: lexiang
+    transport: mock
+    endpoint: ""
+    auth_env_key: AGENT_BRIDGE_LEXIANG_TOKEN
+    timeout_s: 30
+    max_retries: 2
+    catalog_path: config/lexiang_tools.yaml
+    write_tools: []
+
+  - name: github
+    namespace: github
+    transport: mock
+    endpoint: ""
+    auth_env_key: AGENT_BRIDGE_GITHUB_TOKEN
+    timeout_s: 20
+    max_retries: 1
+    # G3 只需验证第二 server 无冲突，最小工具目录内联声明，不验 GitHub 业务
+    catalog_inline:
+      - name: list_repos
+        description: "列出当前用户可访问的 GitHub 仓库（PoC 最小 mock）"
+        input_schema: {type: object, properties: {}}
+      - name: get_file_contents
+        description: "读取仓库文件内容（PoC 最小 mock）"
+        input_schema: {type: object, properties: {owner: {type: string}, repo: {type: string}, path: {type: string}}}
+    write_tools: []

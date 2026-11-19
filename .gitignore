@@ -1,0 +1,38 @@
+# ===== 敏感信息（绝不提交）=====
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+credentials*.json
+*_token.txt
+*secret*
+
+# ===== Python 虚拟环境与缓存 =====
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# ===== WorkBuddy / IDE 本地状态 =====
+.workbuddy/
+.wbapp_*.genie
+.idea/
+.vscode/
+*.swp
+
+# ===== 运行产物 =====
+*.log
+logs/
+.poc-test-*

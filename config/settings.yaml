@@ -1,0 +1,58 @@
+# 静态默认配置。密钥/开关只能通过 AGENT_BRIDGE_* 环境变量注入（见 .env.example）。
+version: 1
+
+server:
+  host: 127.0.0.1
+  port: 8000
+
+llm:
+  provider: mock  # mock | openai_compatible
+  base_url: ""
+  model: gpt-4o-mini
+  stream: true
+  # api_key 故意不在此声明：凭证只来自 AGENT_BRIDGE_LLM__API_KEY
+
+allow_writes: false
+
+tools:
+  enable_real_http: false  # 默认 mock；为 true 时 native__http_request/web_search 才真发网络请求
+  timeout_s: 10
+  max_retries: 2
+
+skills:
+  roots:
+    - C:/Users/Administrator/.workbuddy/skills
+
+sandbox:
+  allowed_interpreters:
+    - python
+    - python3
+  allowed_suffixes:
+    - .py
+  default_timeout_s: 30
+  max_timeout_s: 120
+  audit_log: logs/sandbox-audit.jsonl
+
+tracing:
+  level: INFO
+  fields:
+    - trace_id
+    - run_id
+    - session_id
+    - tool_name
+    - server
+    - skill
+    - latency_ms
+    - dry_run
+    - code
+
+mcp:
+  default_timeout_s: 30
+  max_retries: 2
+  failure_threshold: 3
+  cooldown_s: 30
+  catalog_path: config/lexiang_tools.yaml
+
+test:
+  lexiang_space_id: c3f157b3d03d4c7fa46a8fb8e70b1ae7
+  lexiang_root_entry_id: 571e43a904274b4c9aaa5f7c48e05d77

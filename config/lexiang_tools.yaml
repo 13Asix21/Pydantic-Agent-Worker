@@ -1,0 +1,249 @@
+# 乐享 MCP 声明式 catalog：tools/list 不可用时的回退目录（由 list_tool_categories 实测分类整理）
+# PoC 共 116 个工具，覆盖 knowledge.entry/block/space/file/smartsheet/tag/comment/udf/translation、
+# search、ai.ppt、teamspace.team。qualifier 决定命名空间升级后的二级前缀（如 knowledge__entry_create）。
+version: 1
+namespace: lexiang
+default_input_schema:
+  type: object
+  properties: {}
+  additionalProperties: true
+
+categories:
+  search:
+    qualifier: ""
+    description: 知识检索
+    tool_descriptions:
+      search_kb_search: 按关键词检索个人/团队知识库
+      search_kb_embedding_search: 向量语义检索，返回带 score 的结果
+      search_kb_advanced_search: 带过滤条件的高级检索
+    schemas:
+      search_kb_search:
+        type: object
+        properties:
+          query: {type: string, description: 检索关键词}
+          space_id: {type: string, description: 知识库空间 ID}
+        required: [query]
+      search_kb_embedding_search:
+        type: object
+        properties:
+          query: {type: string}
+          top_k: {type: integer, default: 10}
+          space_id: {type: string}
+        required: [query]
+    tools:
+      - search_kb_search
+      - search_kb_embedding_search
+      - search_kb_advanced_search
+      - search_doc
+      - search_question
+      - search_web
+
+  knowledge_entry:
+    qualifier: knowledge
+    description: 知识条目管理
+    tool_descriptions:
+      entry_create: 在指定父条目下创建知识条目
+      entry_describe: 读取条目元数据
+      entry_list_children: 列出指定条目的子条目
+      entry_update: 更新条目内容
+      entry_delete: 删除条目
+    schemas:
+      entry_create:
+        type: object
+        properties:
+          title: {type: string}
+          parent_id: {type: string}
+          content: {type: string}
+          space_id: {type: string}
+        required: [title, parent_id]
+      entry_list_children:
+        type: object
+        properties:
+          parent_id: {type: string}
+          space_id: {type: string}
+        required: [parent_id]
+      entry_describe:
+        type: object
+        properties:
+          entry_id: {type: string}
+        required: [entry_id]
+    tools:
+      - entry_create
+      - entry_update
+      - entry_describe
+      - entry_list_children
+      - entry_delete
+      - entry_move
+      - entry_rename
+      - entry_copy
+      - entry_batch_create
+      - entry_batch_update
+      - entry_get_parent
+      - entry_get_ancestors
+      - entry_search
+      - entry_get_content
+      - entry_set_content
+      - entry_publish
+      - entry_unpublish
+      - entry_statistics
+
+  knowledge_block:
+    qualifier: knowledge
+    description: 知识块管理
+    tool_descriptions:
+      block_fetch: 读取条目正文块
+      block_create: 创建内容块
+    schemas:
+      block_fetch:
+        type: object
+        properties:
+          entry_id: {type: string}
+          block_id: {type: string}
+        required: [entry_id]
+    tools:
+      - block_fetch
+      - block_create
+      - block_update
+      - block_delete
+      - block_move
+      - block_list
+      - block_describe
+      - block_batch_update
+      - block_insert
+      - block_append
+      - block_get_children
+      - block_set_children
+      - block_archive
+      - block_translate
+
+  knowledge_space:
+    qualifier: knowledge
+    description: 知识库空间管理
+    tool_descriptions:
+      space_list: 列出可访问的知识库空间
+      space_describe: 读取空间详情
+    schemas:
+      space_list:
+        type: object
+        properties:
+          page: {type: integer, default: 1}
+          page_size: {type: integer, default: 50}
+    tools:
+      - space_list
+      - space_describe
+      - space_create
+      - space_update
+      - space_delete
+      - space_list_members
+      - space_add_member
+      - space_remove_member
+      - space_get_permissions
+      - space_set_permissions
+
+  knowledge_file:
+    qualifier: knowledge
+    description: 文件附件管理
+    tools:
+      - file_list
+      - file_describe
+      - file_upload
+      - file_download
+      - file_delete
+      - file_move
+      - file_copy
+      - file_get_url
+      - file_create
+      - file_update
+
+  knowledge_smartsheet:
+    qualifier: knowledge
+    description: 智能表格管理
+    tools:
+      - smartsheet_describe
+      - smartsheet_list_records
+      - smartsheet_create_record
+      - smartsheet_update_record
+      - smartsheet_delete_record
+      - smartsheet_list_fields
+      - smartsheet_create_field
+      - smartsheet_update_field
+      - smartsheet_delete_field
+      - smartsheet_list_views
+      - smartsheet_create_view
+      - smartsheet_batch_update_records
+
+  knowledge_tag:
+    qualifier: knowledge
+    description: 标签管理
+    tools:
+      - tag_list
+      - tag_create
+      - tag_update
+      - tag_delete
+      - tag_apply
+      - tag_remove
+      - tag_describe
+      - tag_search
+
+  knowledge_comment:
+    qualifier: knowledge
+    description: 评论管理
+    tools:
+      - comment_list
+      - comment_create
+      - comment_update
+      - comment_delete
+      - comment_describe
+      - comment_reply
+      - comment_like
+      - comment_unlike
+
+  knowledge_udf:
+    qualifier: knowledge
+    description: 自定义字段管理
+    tools:
+      - udf_list
+      - udf_describe
+      - udf_create
+      - udf_update
+      - udf_delete
+      - udf_get_value
+      - udf_set_value
+      - udf_batch_set_value
+
+  knowledge_translation:
+    qualifier: knowledge
+    description: 翻译能力
+    tools:
+      - translation_translate
+      - translation_detect_language
+      - translation_list_languages
+      - translation_translate_block
+      - translation_translate_entry
+      - translation_get_status
+
+  ai_ppt:
+    qualifier: ai
+    description: AI PPT 生成
+    tools:
+      - ppt_generate
+      - ppt_outline
+      - ppt_template_list
+      - ppt_describe
+      - ppt_export
+      - ppt_update
+      - ppt_delete
+      - ppt_status
+
+  teamspace_team:
+    qualifier: teamspace
+    description: 团队空间管理
+    tools:
+      - team_list
+      - team_describe
+      - team_create
+      - team_update
+      - team_members
+      - team_add_member
+      - team_remove_member
+      - team_archive

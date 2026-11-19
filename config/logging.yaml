@@ -1,0 +1,41 @@
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  json:
+    format: "%(message)s"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: json
+    stream: ext://sys.stdout
+
+root:
+  level: INFO
+  handlers: [console]
+
+# structlog 统一 trace 字段（缺失字段在 processor 中补默认值 None）
+trace_fields:
+  - trace_id
+  - run_id
+  - session_id
+  - tool_name
+  - server
+  - skill
+  - latency_ms
+  - dry_run
+  - code
+
+# 脱敏字段：任何日志中这些 key 的值都会被替换为 "***"
+redact_keys:
+  - token
+  - api_key
+  - authorization
+  - prompt
+  - password
+  - secret
+
+sinks:
+  console: true
+  file: logs/agent-bridge.jsonl
