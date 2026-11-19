@@ -50,9 +50,12 @@ class ToolsSettings(BaseModel):
     enable_real_http: bool = False
     timeout_s: int = 10
     max_retries: int = 2
-    # 官方 WebSearch/WebFetch(native=True) 能力开关（仅生产 provider 注入；mock 全程不触网）。
-    native_web_search: bool = True
-    native_web_fetch: bool = True
+    # 官方 WebSearch/WebFetch(native=True) 能力开关。
+    # native=True 仅 OpenAIResponsesModel 支持；OpenAIChatModel（deepseek 等网关渠道）
+    # 会直接抛 5002 "not supported"，因此默认关闭，联网走自研
+    # native__web_search / native__http_request。确认模型兼容后可显式开启。
+    native_web_search: bool = False
+    native_web_fetch: bool = False
 
 
 class SkillsSettings(BaseModel):
@@ -161,7 +164,7 @@ def config_dir() -> Path:
 
 
 class Settings(BaseSettings):
-    """Application settings: YAML defaults overlaid by ``AGENT_BRIDGE_*`` ENV."""
+    """Application settings: YAML defaults, overlaid by dotenv then ``AGENT_BRIDGE_*`` ENV."""
 
     model_config = SettingsConfigDict(
         env_prefix="AGENT_BRIDGE_",
@@ -169,6 +172,10 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
         validate_assignment=True,
+        # pydantic-settings 仅在显式配置 env_file 时才读取 dotenv；指向项目根 .env，
+        # 让本地凭证真正生效。优先级：init > OS ENV > .env > YAML（先者胜）。
+        env_file=PROJECT_ROOT / ".env",
+        env_file_encoding="utf-8",
     )
 
     config_path: ClassVar[Path] = DEFAULT_CONFIG_DIR / "settings.yaml"
@@ -193,9 +200,14 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """Order sources so ENV wins over YAML defaults."""
+        """Order sources so real ENV and ``.env`` win over YAML defaults.
+
+        pydantic-settings uses first-source-wins semantics. ``dotenv_settings`` must
+        therefore precede the YAML source; otherwise the YAML ``llm.provider: mock``
+        silently masks every ``AGENT_BRIDGE_*`` value stored in ``.env``.
+        """
         yaml_data = _strip_credentials(_load_yaml(config_dir() / "settings.yaml"))
-        return (init_settings, env_settings, YamlSettingsSource(settings_cls, yaml_data), dotenv_settings)
+        return (init_settings, env_settings, dotenv_settings, YamlSettingsSource(settings_cls, yaml_data))
 
     @property
     def dry_run(self) -> bool:

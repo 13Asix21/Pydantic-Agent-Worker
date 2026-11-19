@@ -13,6 +13,11 @@ from agent_bridge.skills.registry import SkillRegistry
 from agent_bridge.skills.sandbox import ScriptSandbox
 from agent_bridge.tools.registry import ToolRegistry
 
+# 测试基线必须是确定性 mock：Settings 现在会读取项目根 .env（其中含真实凭证），
+# 必须在这里钉住 provider，避免 pytest 误连真实模型。OS ENV 优先级高于 dotenv。
+# Settings() 只在 fixture 运行时实例化，因此放在 import 之后即可，且不违反 E402。
+os.environ.setdefault("AGENT_BRIDGE_LLM__PROVIDER", "mock")
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = PROJECT_ROOT / "tests" / "fixtures"
 REAL_SKILLS_ROOT = Path("C:/Users/Administrator/.workbuddy/skills")

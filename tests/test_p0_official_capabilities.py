@@ -46,8 +46,11 @@ def test_caching_sets_model_settings_cache() -> None:
 
 
 def test_production_injects_all_official_capabilities() -> None:
-    """生产 provider 下五项 P0 官方能力全部注入，且各占一个可回滚列表项。"""
-    runtime = AgentRuntime(settings=_prod_settings())
+    """显式开启 native 开关后，七项 P0 官方能力全部注入，且各占一个可回滚列表项。"""
+    settings = _prod_settings()
+    settings.tools.native_web_search = True
+    settings.tools.native_web_fetch = True
+    runtime = AgentRuntime(settings=settings)
     caps = runtime._build_capabilities([Tool(lambda: "x", name="probe")])
     for expected in (
         Instrumentation,
@@ -62,8 +65,10 @@ def test_production_injects_all_official_capabilities() -> None:
 
 
 def test_web_capabilities_can_be_disabled() -> None:
-    """native_web_* 开关关闭时不注入对应官方能力。"""
+    """native_web_* 默认关闭（OpenAIChatModel 不兼容），关闭时不注入官方 web 能力。"""
     settings = _prod_settings()
+    assert settings.tools.native_web_search is False
+    assert settings.tools.native_web_fetch is False
     settings.tools.native_web_search = False
     settings.tools.native_web_fetch = False
     runtime = AgentRuntime(settings=settings)

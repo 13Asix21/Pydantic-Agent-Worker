@@ -198,8 +198,11 @@ class AgentRuntime:
         # 以免破坏统一信封与 REST/MCP 工具名契约。
         caps.append(Toolset(FunctionToolset(tools)))
 
-        # 关注点 5：官方原生 web 能力，仅生产 provider 注入（mock 全程不触网）。
-        # http_request 任意方法无官方等价，仍由 native__http_request 自研工具承担。
+        # 关注点 5：官方原生 web 能力，默认关闭。
+        # WebSearch(native=True)/WebFetch(native=True) 仅 OpenAIResponsesModel 支持；
+        # OpenAIChatModel（deepseek 等网关渠道）会在建图时抛 5002 not supported。
+        # 由 native_web_search / native_web_fetch 显式开启，供确认兼容的高级用户使用。
+        # 联网默认仍走自研 native__web_search / native__http_request 工具。
         if production:
             if self.settings.tools.native_web_search:
                 caps.append(WebSearch(native=True))
